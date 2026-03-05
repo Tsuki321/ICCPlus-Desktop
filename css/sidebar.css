@@ -549,6 +549,151 @@
 /* ---- Crop selection rectangle drawn on canvas ---- */
 /* (drawn programmatically, no CSS needed) */
 
+/* ---- Creator Mode Gating — hide completely when not in CYOA creator ---- */
+/* translateX(360px) pushes both the sidebar AND the protruding toggle button
+   fully off-screen (sidebar is 320px wide, toggle protrudes 38px to the left) */
+#cyoa-sidebar.hidden-outside-creator {
+  transform: translateX(360px);
+  pointer-events: none;
+}
+
+/* ---- OCR Section ---- */
+#sidebar-ocr-section {
+  border-top: 1px solid #313244;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #1e1e2e;
+}
+
+#sidebar-ocr-section[hidden] {
+  display: none;
+}
+
+#sidebar-ocr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+#sidebar-ocr-title {
+  font-size: 11.5px;
+  color: #a6adc8;
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#sidebar-ocr-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+#sidebar-ocr-copy-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+#sidebar-ocr-close-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: #313244;
+  border: 1px solid #45475a;
+  color: #a6adc8;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  transition: background 0.15s;
+  line-height: 1;
+  padding: 0;
+}
+
+#sidebar-ocr-close-btn:hover {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+#sidebar-ocr-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #89b4fa;
+  font-size: 11.5px;
+  padding: 2px 0;
+}
+
+#sidebar-ocr-loading[hidden] {
+  display: none;
+}
+
+#sidebar-ocr-text {
+  min-height: 64px;
+  max-height: 110px;
+  background: #181825;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  color: #cdd6f4;
+  font-size: 12px;
+  font-family: 'Roboto', sans-serif;
+  padding: 6px 8px;
+  resize: vertical;
+  outline: none;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: #45475a transparent;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#sidebar-ocr-text:focus {
+  border-color: #89b4fa;
+}
+
+/* ---- OCR button overlay on gallery items ---- */
+.gallery-item-ocr {
+  position: absolute;
+  bottom: 20px; /* sits above the label bar */
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: rgba(137, 180, 250, 0.9);
+  border: none;
+  color: #1e1e2e;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  outline: none;
+  z-index: 2;
+  padding: 0;
+  line-height: 1;
+}
+
+.gallery-item:hover .gallery-item-ocr {
+  opacity: 1;
+}
+
+.gallery-item-ocr:hover {
+  background: rgba(116, 199, 236, 0.95);
+}
+
 /* ---- Responsive: hide sidebar toggle label on very small ---- */
 @media (max-width: 600px) {
   #cyoa-sidebar {

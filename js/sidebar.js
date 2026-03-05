@@ -30,6 +30,8 @@
     refCanvasNaturalH: 0,
     refCanvasDisplayW: 0,    // displayed canvas dimensions
     refCanvasDisplayH: 0,
+    creatorModeActive: false, // whether hidden because not in CYOA creator section
+    ocrIsRunning: false,     // prevent concurrent OCR runs
   };
 
   /* -----------------------------------------------------------------------
@@ -39,10 +41,11 @@
   let sidebar, toggleBtn, arrowSpan;
   let helpBtn, helpTooltip;
   let refDropZone, refCanvas, cropOverlay, refPlaceholder;
-  let cropBtn, clearRefBtn, clearCropsBtn;
+  let cropBtn, clearRefBtn, clearCropsBtn, ocrRegionBtn;
   let gallery;
   let scaleBtns;
   let upscaleIndicator;
+  let ocrSection, ocrTitle, ocrLoading, ocrText, ocrCopyBtn, ocrCloseBtn;
 
   /* -----------------------------------------------------------------------
    * Sidebar Injection
@@ -65,7 +68,9 @@
             <li>Drop or browse for your reference CYOA image below.</li>
             <li>Click &amp; drag on the image to select a region to crop.</li>
             <li>Click <em>Crop &amp; Upscale</em> to add it to the gallery.</li>
-            <li>Drag any gallery image onto a choice's image field in the editor.</li>
+            <li>Click <em>&#128203; OCR</em> to extract text from the selected region.</li>
+            <li>Drag any gallery image onto a choice image field in the editor.</li>
+            <li>Hover a gallery image and click &#128203; to extract its text.</li>
           </ol>
           <small>Tip: Press <kbd>Ctrl+Shift+S</kbd> to toggle this sidebar.</small>
         </div>
@@ -99,6 +104,7 @@
           </div>
           <div id="sidebar-ref-controls">
             <button id="sidebar-crop-btn" class="sidebar-btn primary" disabled>Crop &amp; Upscale</button>
+            <button id="sidebar-ocr-region-btn" class="sidebar-btn" disabled title="Extract text from selected region (OCR)">&#128203; OCR</button>
             <button id="sidebar-clear-ref-btn" class="sidebar-btn danger" disabled>Clear</button>
           </div>
         </div>
@@ -109,6 +115,21 @@
             <button id="sidebar-clear-crops-btn">Clear All</button>
           </div>
           <div id="sidebar-gallery"></div>
+        </div>
+
+        <div id="sidebar-ocr-section" hidden>
+          <div id="sidebar-ocr-header">
+            <span id="sidebar-ocr-title">&#128203; Extracted Text</span>
+            <div id="sidebar-ocr-actions">
+              <button id="sidebar-ocr-copy-btn" class="sidebar-btn" title="Copy all text" disabled>Copy</button>
+              <button id="sidebar-ocr-close-btn" title="Close OCR panel">&#10005;</button>
+            </div>
+          </div>
+          <div id="sidebar-ocr-loading" hidden>
+            <div class="sidebar-spinner"></div>
+            <span>Extracting text&#8230;</span>
+          </div>
+          <textarea id="sidebar-ocr-text" readonly placeholder="Extracted text will appear here&#8230;"></textarea>
         </div>
 
         <div id="sidebar-instructions">
@@ -146,11 +167,18 @@
     cropOverlay = document.getElementById('sidebar-crop-overlay');
     refPlaceholder = document.getElementById('sidebar-ref-placeholder');
     cropBtn = document.getElementById('sidebar-crop-btn');
+    ocrRegionBtn = document.getElementById('sidebar-ocr-region-btn');
     clearRefBtn = document.getElementById('sidebar-clear-ref-btn');
     clearCropsBtn = document.getElementById('sidebar-clear-crops-btn');
     gallery = document.getElementById('sidebar-gallery');
     upscaleIndicator = document.getElementById('sidebar-upscale-indicator');
     scaleBtns = document.querySelectorAll('#cyoa-sidebar .scale-btn');
+    ocrSection = document.getElementById('sidebar-ocr-section');
+    ocrTitle = document.getElementById('sidebar-ocr-title');
+    ocrLoading = document.getElementById('sidebar-ocr-loading');
+    ocrText = document.getElementById('sidebar-ocr-text');
+    ocrCopyBtn = document.getElementById('sidebar-ocr-copy-btn');
+    ocrCloseBtn = document.getElementById('sidebar-ocr-close-btn');
   }
 
   /* -----------------------------------------------------------------------
@@ -161,11 +189,11 @@
     // Toggle sidebar
     toggleBtn.addEventListener('click', toggleSidebar);
 
-    // Keyboard shortcut
+    // Keyboard shortcut (only when in creator mode)
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
         e.preventDefault();
-        toggleSidebar();
+        if (state.creatorModeActive) toggleSidebar();
       }
     });
 
@@ -233,6 +261,24 @@
         performCropAndUpscale();
       }
     });
+
+    // OCR selected region button
+    ocrRegionBtn.addEventListener('click', () => {
+      if (state.cropRect) performOCROnRegion();
+    });
+
+    // OCR panel copy button
+    ocrCopyBtn.addEventListener('click', () => {
+      const text = ocrText.value;
+      if (!text) return;
+      navigator.clipboard.writeText(text).catch(() => {
+        ocrText.select();
+        document.execCommand('copy');
+      });
+    });
+
+    // OCR panel close button
+    ocrCloseBtn.addEventListener('click', hideOCRPanel);
 
     // Clear reference
     clearRefBtn.addEventListener('click', clearRefImage);
@@ -352,6 +398,7 @@
     state.cropRect = null;
     state.isCropping = false;
     cropBtn.disabled = true;
+    if (ocrRegionBtn) ocrRegionBtn.disabled = true;
     clearOverlayCanvas();
   }
 
@@ -402,6 +449,7 @@
     state.isCropping = false;
     if (state.cropRect && state.cropRect.w > 4 && state.cropRect.h > 4) {
       cropBtn.disabled = false;
+      if (ocrRegionBtn) ocrRegionBtn.disabled = false;
     } else {
       state.cropRect = null;
       clearOverlayCanvas();
@@ -606,9 +654,19 @@
       removeCropById(item.id);
     });
 
+    const ocrBtn = document.createElement('button');
+    ocrBtn.className = 'gallery-item-ocr';
+    ocrBtn.title = 'Extract text from this image (OCR)';
+    ocrBtn.textContent = '\u{1F4CB}';
+    ocrBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      performOCR(item.dataUrl, item.label);
+    });
+
     el.appendChild(img);
     el.appendChild(lbl);
     el.appendChild(delBtn);
+    el.appendChild(ocrBtn);
 
     // Drag events
     el.addEventListener('dragstart', (e) => {
@@ -885,14 +943,121 @@
   }
 
   /* -----------------------------------------------------------------------
+   * CYOA Creator Mode Detection
+   * The sidebar is only relevant in the CYOA creator section (not in the
+   * viewer, main menu, or other sections). We detect this by checking for
+   * the "Create New Row" button which only renders in the creator section.
+   * --------------------------------------------------------------------- */
+
+  function isInCreatorMode() {
+    return !!document.querySelector('.create-box');
+  }
+
+  function updateSidebarVisibility() {
+    const inCreator = isInCreatorMode();
+    if (inCreator !== state.creatorModeActive) {
+      state.creatorModeActive = inCreator;
+      sidebar.classList.toggle('hidden-outside-creator', !inCreator);
+      if (!inCreator && helpTooltip) {
+        helpTooltip.classList.remove('visible');
+      }
+    }
+  }
+
+  function startCreatorModeWatcher() {
+    // Immediate check, then poll every 300 ms (route transitions are infrequent)
+    updateSidebarVisibility();
+    setInterval(updateSidebarVisibility, 300);
+  }
+
+  /* -----------------------------------------------------------------------
+   * OCR — Extract text from an image via Electron IPC (Windows OCR)
+   * --------------------------------------------------------------------- */
+
+  function performOCR(dataUrl, label) {
+    if (state.ocrIsRunning) return;
+    if (!window.electron?.ipcRenderer) {
+      showOCRPanel();
+      showOCRResult('OCR requires the Electron desktop app context.');
+      return;
+    }
+
+    state.ocrIsRunning = true;
+    showOCRPanel();
+    showOCRLoading(label || 'image');
+
+    window.electron.ipcRenderer.invoke('ocr-image', dataUrl)
+      .then((text) => {
+        showOCRResult(text || '(No text detected)');
+      })
+      .catch((err) => {
+        showOCRResult('OCR error: ' + (err && err.message ? err.message : 'Unknown error'));
+      })
+      .finally(() => {
+        state.ocrIsRunning = false;
+      });
+  }
+
+  function performOCROnRegion() {
+    if (!state.refImage || !state.cropRect) return;
+
+    const rect = state.cropRect;
+    const xScale = state.refCanvasNaturalW / state.refCanvasDisplayW;
+    const yScale = state.refCanvasNaturalH / state.refCanvasDisplayH;
+    const srcX = Math.round(rect.x * xScale);
+    const srcY = Math.round(rect.y * yScale);
+    const srcW = Math.round(rect.w * xScale);
+    const srcH = Math.round(rect.h * yScale);
+
+    if (srcW < 1 || srcH < 1) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = srcW;
+    canvas.height = srcH;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(state.refImage, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+    const dataUrl = canvas.toDataURL('image/png');
+
+    performOCR(dataUrl, `${srcW}\u00d7${srcH} region`);
+  }
+
+  function showOCRPanel() {
+    ocrSection.removeAttribute('hidden');
+  }
+
+  function showOCRLoading(label) {
+    ocrTitle.textContent = '\u{1F4CB} OCR: ' + label;
+    ocrLoading.removeAttribute('hidden');
+    ocrText.value = '';
+    ocrCopyBtn.disabled = true;
+  }
+
+  function showOCRResult(text) {
+    ocrLoading.setAttribute('hidden', '');
+    ocrText.value = text;
+    ocrCopyBtn.disabled = !text;
+  }
+
+  function hideOCRPanel() {
+    ocrSection.setAttribute('hidden', '');
+    ocrText.value = '';
+    ocrTitle.textContent = '\u{1F4CB} Extracted Text';
+    ocrCopyBtn.disabled = true;
+  }
+
+  /* -----------------------------------------------------------------------
    * Bootstrap — wait for DOM to be ready
    * --------------------------------------------------------------------- */
 
   function init() {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', injectSidebar);
+      document.addEventListener('DOMContentLoaded', () => {
+        injectSidebar();
+        startCreatorModeWatcher();
+      });
     } else {
       injectSidebar();
+      startCreatorModeWatcher();
     }
   }
 

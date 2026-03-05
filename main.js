@@ -4,6 +4,8 @@ const { startServer } = require('./server');
 const { name } = require('./package.json');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { execFile } = require('child_process');
 const log = require('electron-log');
 const Store = require('electron-store').default;
 const contextMenu = require('electron-context-menu').default;
@@ -155,4 +157,74 @@ ipcMain.on('idb-import-success', () => {
         app.relaunch();
         app.exit(0);
     }, 3000);
+});
+
+/* -----------------------------------------------------------------------
+ * OCR — Extracts text from an image data URL using Windows built-in OCR
+ * (Windows.Media.Ocr via PowerShell WinRT). No additional dependencies.
+ * ----------------------------------------------------------------------- */
+ipcMain.handle('ocr-image', async (event, dataUrl) => {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image')) {
+        throw new Error('Invalid image data provided to OCR.');
+    }
+
+    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const timestamp = Date.now();
+    const imgPath = path.join(os.tmpdir(), `icc_ocr_${timestamp}.png`);
+    const ps1Path = path.join(os.tmpdir(), `icc_ocr_${timestamp}.ps1`);
+
+    // PowerShell script using Windows.Media.Ocr (WinRT) — works on Windows 10+
+    const ps1Script = `
+param([string]$imagePath)
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+[void][Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
+[void][Windows.Media.Ocr.OcrEngine, Windows.Media.Ocr, ContentType=WindowsRuntime]
+[void][Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime]
+$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.IsGenericMethod
+})[0]
+function Await {
+    param($WinRtTask, $ResultType)
+    $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+    $netTask = $asTask.Invoke($null, @($WinRtTask))
+    $netTask.Wait() | Out-Null
+    $netTask.Result
+}
+try {
+    $storageFile = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($imagePath)) ([Windows.Storage.StorageFile])
+    $stream = Await ($storageFile.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStream])
+    $decode = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+    $bitmap = Await ($decode.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+    $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+    if ($null -eq $engine) { exit 0 }
+    $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+    $result.Lines | ForEach-Object { $_.Text }
+} catch {
+    Write-Error $_.Exception.Message
+    exit 1
+}
+`.trim();
+
+    try {
+        fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
+        fs.writeFileSync(ps1Path, ps1Script, 'utf-8');
+
+        return await new Promise((resolve, reject) => {
+            execFile(
+                'powershell.exe',
+                ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1Path, imgPath],
+                { timeout: 30000 },
+                (error, stdout, stderr) => {
+                    if (error) {
+                        reject(new Error((stderr || error.message || 'OCR failed').trim()));
+                    } else {
+                        resolve(stdout.trim());
+                    }
+                }
+            );
+        });
+    } finally {
+        try { fs.unlinkSync(ps1Path); } catch {}
+        try { fs.unlinkSync(imgPath); } catch {}
+    }
 });
