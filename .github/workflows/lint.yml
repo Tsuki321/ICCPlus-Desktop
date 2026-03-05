@@ -1,0 +1,30 @@
+name: Lint & Syntax Check
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check JS syntax (main process)
+        run: node --check main.js preload.js server.js build.js
+
+      - name: Check JS syntax (renderer scripts)
+        run: |
+          for f in js/*.js; do node --check "$f" || exit 1; done

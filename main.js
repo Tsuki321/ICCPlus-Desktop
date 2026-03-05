@@ -174,12 +174,15 @@ ipcMain.handle('ocr-image', async (event, dataUrl) => {
     const ps1Path = path.join(os.tmpdir(), `icc_ocr_${timestamp}.ps1`);
 
     // PowerShell script using Windows.Media.Ocr (WinRT) — works on Windows 10+
+    // Reads file bytes via .NET File.ReadAllBytes to avoid WinRT COM-type conversion
+    // issues with StorageFile.OpenReadAsync() returning System.__ComObject.
     const ps1Script = `
 param([string]$imagePath)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 [void][Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
 [void][Windows.Media.Ocr.OcrEngine, Windows.Media.Ocr, ContentType=WindowsRuntime]
-[void][Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime]
+[void][Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage.Streams, ContentType=WindowsRuntime]
+[void][Windows.Storage.Streams.DataWriter, Windows.Storage.Streams, ContentType=WindowsRuntime]
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
     $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.IsGenericMethod
 })[0]
@@ -191,8 +194,13 @@ function Await {
     $netTask.Result
 }
 try {
-    $storageFile = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($imagePath)) ([Windows.Storage.StorageFile])
-    $stream = Await ($storageFile.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStream])
+    $bytes = [System.IO.File]::ReadAllBytes($imagePath)
+    $stream = [Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
+    $writer = [Windows.Storage.Streams.DataWriter]::new($stream)
+    $writer.WriteBytes($bytes)
+    Await ($writer.StoreAsync()) ([System.UInt32]) | Out-Null
+    $writer.DetachStream()
+    $stream.Seek(0)
     $decode = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
     $bitmap = Await ($decode.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
     $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()

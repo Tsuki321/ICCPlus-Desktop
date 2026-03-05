@@ -21,7 +21,7 @@
     refImage: null,          // HTMLImageElement - loaded reference image
     refImageDataUrl: null,   // string - data URL of the reference image
     scaleFactor: 2,          // current upscale factor (2 / 4 / 8)
-    crops: [],               // array of { dataUrl, width, height, label }
+    crops: [],               // array of { dataUrl, thumbDataUrl, width, height, label }
     cropStart: null,         // { x, y } in canvas coords when dragging
     cropRect: null,          // { x, y, w, h } current crop rectangle in canvas coords
     isCropping: false,       // mouse is down
@@ -32,6 +32,9 @@
     refCanvasDisplayH: 0,
     creatorModeActive: false, // whether hidden because not in CYOA creator section
     ocrIsRunning: false,     // prevent concurrent OCR runs
+    lightboxItemId: null,    // id of the crop currently shown in the lightbox
+    lightboxZoom: 1.0,       // current lightbox zoom level
+    cropShape: 'rect',       // 'rect' | 'square' | 'ellipse' | 'circle'
   };
 
   /* -----------------------------------------------------------------------
@@ -43,9 +46,12 @@
   let refDropZone, refCanvas, cropOverlay, refPlaceholder;
   let cropBtn, clearRefBtn, clearCropsBtn, ocrRegionBtn;
   let gallery;
-  let scaleBtns;
+  let scaleBtns, shapeBtns;
   let upscaleIndicator;
   let ocrSection, ocrTitle, ocrLoading, ocrText, ocrCopyBtn, ocrCloseBtn;
+  // Lightbox elements
+  let lightbox, lightboxImg, lightboxTitle, lightboxZoomLabel;
+  let lightboxZoomIn, lightboxZoomOut, lightboxZoomReset, lightboxRemove, lightboxClose, lightboxViewport;
 
   /* -----------------------------------------------------------------------
    * Sidebar Injection
@@ -87,6 +93,15 @@
 
         <div id="sidebar-ref-section">
           <div id="sidebar-ref-label">Reference CYOA Image</div>
+          <div id="sidebar-shape-section">
+            <label>Crop Shape:</label>
+            <div class="sidebar-shape-buttons">
+              <button class="shape-btn active" data-shape="rect" title="Free Rectangle">&#9645; Rect</button>
+              <button class="shape-btn" data-shape="square" title="Square (equal sides)">&#9633; Square</button>
+              <button class="shape-btn" data-shape="ellipse" title="Ellipse">&#11053; Ellipse</button>
+              <button class="shape-btn" data-shape="circle" title="Circle (equal sides)">&#9675; Circle</button>
+            </div>
+          </div>
           <div id="sidebar-ref-drop-zone">
             <div id="sidebar-ref-placeholder">
               <div class="placeholder-icon">&#128247;</div>
@@ -136,6 +151,26 @@
           <small>&#128161; Drag a crop from the gallery onto a choice image field in the editor to set it.</small>
         </div>
       </div>
+
+      <!-- Lightbox overlay — covers sidebar-content when a gallery image is clicked -->
+      <div id="sidebar-lightbox" hidden>
+        <div id="sidebar-lightbox-toolbar">
+          <span id="sidebar-lightbox-title">Preview</span>
+          <div id="sidebar-lightbox-zoom-controls">
+            <button id="sidebar-lightbox-zoom-out" title="Zoom Out">&#8722;</button>
+            <span id="sidebar-lightbox-zoom-label">100%</span>
+            <button id="sidebar-lightbox-zoom-in" title="Zoom In">+</button>
+            <button id="sidebar-lightbox-zoom-reset" title="Fit to view">&#8865;</button>
+          </div>
+          <div id="sidebar-lightbox-actions">
+            <button id="sidebar-lightbox-remove" title="Remove this crop from gallery">&#128465; Remove</button>
+            <button id="sidebar-lightbox-close" title="Close preview">&#10005;</button>
+          </div>
+        </div>
+        <div id="sidebar-lightbox-viewport">
+          <img id="sidebar-lightbox-img" alt="" draggable="false" />
+        </div>
+      </div>
     `;
   }
 
@@ -173,12 +208,24 @@
     gallery = document.getElementById('sidebar-gallery');
     upscaleIndicator = document.getElementById('sidebar-upscale-indicator');
     scaleBtns = document.querySelectorAll('#cyoa-sidebar .scale-btn');
+    shapeBtns = document.querySelectorAll('#cyoa-sidebar .shape-btn');
     ocrSection = document.getElementById('sidebar-ocr-section');
     ocrTitle = document.getElementById('sidebar-ocr-title');
     ocrLoading = document.getElementById('sidebar-ocr-loading');
     ocrText = document.getElementById('sidebar-ocr-text');
     ocrCopyBtn = document.getElementById('sidebar-ocr-copy-btn');
     ocrCloseBtn = document.getElementById('sidebar-ocr-close-btn');
+    // Lightbox
+    lightbox = document.getElementById('sidebar-lightbox');
+    lightboxImg = document.getElementById('sidebar-lightbox-img');
+    lightboxTitle = document.getElementById('sidebar-lightbox-title');
+    lightboxZoomLabel = document.getElementById('sidebar-lightbox-zoom-label');
+    lightboxZoomIn = document.getElementById('sidebar-lightbox-zoom-in');
+    lightboxZoomOut = document.getElementById('sidebar-lightbox-zoom-out');
+    lightboxZoomReset = document.getElementById('sidebar-lightbox-zoom-reset');
+    lightboxRemove = document.getElementById('sidebar-lightbox-remove');
+    lightboxClose = document.getElementById('sidebar-lightbox-close');
+    lightboxViewport = document.getElementById('sidebar-lightbox-viewport');
   }
 
   /* -----------------------------------------------------------------------
@@ -214,6 +261,17 @@
         scaleBtns.forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         state.scaleFactor = parseInt(btn.dataset.scale, 10);
+      });
+    });
+
+    // Crop shape buttons
+    shapeBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        shapeBtns.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.cropShape = btn.dataset.shape;
+        // Clear any active crop selection since shape changed
+        if (state.cropRect) resetCropState();
       });
     });
 
@@ -279,6 +337,42 @@
 
     // OCR panel close button
     ocrCloseBtn.addEventListener('click', hideOCRPanel);
+
+    // Lightbox controls
+    lightboxZoomIn.addEventListener('click', () => changeZoom(0.25));
+    lightboxZoomOut.addEventListener('click', () => changeZoom(-0.25));
+    lightboxZoomReset.addEventListener('click', fitLightboxToViewport);
+    lightboxClose.addEventListener('click', closeLightbox);
+    lightboxRemove.addEventListener('click', removeCropFromLightbox);
+    // Mouse-drag panning inside the lightbox viewport
+    (() => {
+      let isPanning = false, panStartX = 0, panStartY = 0, scrollStartX = 0, scrollStartY = 0;
+      lightboxViewport.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        scrollStartX = lightboxViewport.scrollLeft;
+        scrollStartY = lightboxViewport.scrollTop;
+        e.preventDefault();
+      });
+      lightboxViewport.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        lightboxViewport.scrollLeft = scrollStartX - (e.clientX - panStartX);
+        lightboxViewport.scrollTop = scrollStartY - (e.clientY - panStartY);
+      });
+      const stopPan = () => { isPanning = false; };
+      lightboxViewport.addEventListener('mouseup', stopPan);
+      lightboxViewport.addEventListener('mouseleave', stopPan);
+    })();
+
+    // Scroll-wheel zoom in lightbox viewport
+    lightboxViewport.addEventListener('wheel', (e) => {
+      if (!lightbox.hasAttribute('hidden')) {
+        e.preventDefault();
+        changeZoom(e.deltaY < 0 ? 0.15 : -0.15);
+      }
+    }, { passive: false });
 
     // Clear reference
     clearRefBtn.addEventListener('click', clearRefImage);
@@ -434,11 +528,21 @@
     const pos = getCanvasPos(e);
     const sx = state.cropStart.x;
     const sy = state.cropStart.y;
+    let dx = pos.x - sx;
+    let dy = pos.y - sy;
+
+    // Square and Circle shapes are constrained to equal sides
+    if (state.cropShape === 'square' || state.cropShape === 'circle') {
+      const side = Math.max(Math.abs(dx), Math.abs(dy));
+      dx = dx >= 0 ? side : -side;
+      dy = dy >= 0 ? side : -side;
+    }
+
     const rect = {
-      x: Math.min(sx, pos.x),
-      y: Math.min(sy, pos.y),
-      w: Math.abs(pos.x - sx),
-      h: Math.abs(pos.y - sy),
+      x: Math.min(sx, sx + dx),
+      y: Math.min(sy, sy + dy),
+      w: Math.abs(dx),
+      h: Math.abs(dy),
     };
     state.cropRect = rect;
     drawCropRect(rect);
@@ -466,31 +570,51 @@
     const ctx = cropOverlay.getContext('2d');
     ctx.clearRect(0, 0, cropOverlay.width, cropOverlay.height);
 
+    const shape = state.cropShape;
+    const ecx = rect.x + rect.w / 2; // ellipse center x
+    const ecy = rect.y + rect.h / 2; // ellipse center y
+    const erx = rect.w / 2;          // ellipse radius x
+    const ery = rect.h / 2;          // ellipse radius y
+
     // Dimmed overlay
     ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
     ctx.fillRect(0, 0, cropOverlay.width, cropOverlay.height);
 
-    // Clear selected region
-    ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+    // Punch out selected region using shape-appropriate path
+    if (shape === 'circle' || shape === 'ellipse') {
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+    }
 
     // Dashed border on selection
     ctx.save();
     ctx.strokeStyle = '#89b4fa';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
-    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-
-    // Corner handles
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#89b4fa';
-    const hs = 5;
-    [[rect.x, rect.y], [rect.x + rect.w, rect.y], [rect.x, rect.y + rect.h], [rect.x + rect.w, rect.y + rect.h]].forEach(([cx, cy]) => {
-      ctx.fillRect(cx - hs / 2, cy - hs / 2, hs, hs);
-    });
+    if (shape === 'circle' || shape === 'ellipse') {
+      ctx.beginPath();
+      ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+      // Corner handles (rect and square only)
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#89b4fa';
+      const hs = 5;
+      [[rect.x, rect.y], [rect.x + rect.w, rect.y], [rect.x, rect.y + rect.h], [rect.x + rect.w, rect.y + rect.h]].forEach(([hx, hy]) => {
+        ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+      });
+    }
     ctx.restore();
 
-    // Dimensions label
-    // Map from display coords back to natural pixel coords
+    // Dimensions label — map display coords back to natural pixel coords
     const xScale = state.refCanvasNaturalW / state.refCanvasDisplayW;
     const yScale = state.refCanvasNaturalH / state.refCanvasDisplayH;
     const naturalW = Math.round(rect.w * xScale);
@@ -499,13 +623,13 @@
     ctx.save();
     ctx.fillStyle = 'rgba(30,30,46,0.8)';
     ctx.font = '10px Roboto, sans-serif';
-    const label = `${naturalW} × ${naturalH}`;
-    const tw = ctx.measureText(label).width + 8;
+    const dimLabel = `${naturalW} × ${naturalH}`;
+    const tw = ctx.measureText(dimLabel).width + 8;
     const lx = Math.min(rect.x, cropOverlay.width - tw - 2);
     const ly = Math.max(rect.y - 18, 2);
     ctx.fillRect(lx, ly, tw, 16);
     ctx.fillStyle = '#89b4fa';
-    ctx.fillText(label, lx + 4, ly + 11);
+    ctx.fillText(dimLabel, lx + 4, ly + 11);
     ctx.restore();
   }
 
@@ -546,6 +670,16 @@
         offCtx.imageSmoothingEnabled = true;
         offCtx.imageSmoothingQuality = 'high';
 
+        // For circle/ellipse crops: clip canvas to the shape before drawing
+        const cropShape = state.cropShape;
+        const isRound = cropShape === 'circle' || cropShape === 'ellipse';
+        if (isRound) {
+          offCtx.save();
+          offCtx.beginPath();
+          offCtx.ellipse(targetW / 2, targetH / 2, targetW / 2, targetH / 2, 0, 0, Math.PI * 2);
+          offCtx.clip();
+        }
+
         // Draw the natural-resolution crop, upscaled to targetW×targetH
         offCtx.drawImage(
           state.refImage,
@@ -553,13 +687,32 @@
           0, 0, targetW, targetH
         );
 
+        if (isRound) {
+          offCtx.restore();
+        }
+
         // Optional: apply a subtle sharpening pass via convolution for small crops
         if (state.scaleFactor >= 2 && targetW <= 1024 && targetH <= 1024) {
           applySharpen(offCtx, targetW, targetH, 0.3);
         }
 
         const dataUrl = offCanvas.toDataURL('image/png');
-        addCropToGallery(dataUrl, targetW, targetH, srcW, srcH);
+
+        // Generate a crisp thumbnail (~144 px wide) so gallery tiles look sharp
+        const THUMB_MAX = 144;
+        const thumbScale = Math.min(THUMB_MAX / targetW, THUMB_MAX / targetH, 1);
+        const thumbW = Math.max(1, Math.round(targetW * thumbScale));
+        const thumbH = Math.max(1, Math.round(targetH * thumbScale));
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = thumbW;
+        thumbCanvas.height = thumbH;
+        const thumbCtx = thumbCanvas.getContext('2d');
+        thumbCtx.imageSmoothingEnabled = true;
+        thumbCtx.imageSmoothingQuality = 'high';
+        thumbCtx.drawImage(offCanvas, 0, 0, thumbW, thumbH);
+        const thumbDataUrl = thumbCanvas.toDataURL('image/png');
+
+        addCropToGallery(dataUrl, thumbDataUrl, targetW, targetH, srcW, srcH);
 
         resetCropState();
       } catch (err) {
@@ -616,10 +769,11 @@
    * Gallery Management
    * --------------------------------------------------------------------- */
 
-  function addCropToGallery(dataUrl, targetW, targetH, srcW, srcH) {
-    const label = `${targetW}×${targetH}`;
+  function addCropToGallery(dataUrl, thumbDataUrl, targetW, targetH, srcW, srcH) {
+    const label = `${targetW}\u00d7${targetH}`;
     const item = {
       dataUrl,
+      thumbDataUrl: thumbDataUrl || dataUrl,
       width: targetW,
       height: targetH,
       label,
@@ -635,11 +789,20 @@
     el.className = 'gallery-item';
     el.dataset.cropId = item.id;
     el.draggable = true;
-    el.title = `${item.label} — drag to a choice image field`;
+    el.title = `${item.label} — click to preview · drag to a choice image field`;
 
     const img = document.createElement('img');
-    img.src = item.dataUrl;
+    // Use dedicated thumbnail if available; fall back to full dataUrl
+    img.src = item.thumbDataUrl || item.dataUrl;
     img.alt = item.label;
+    img.loading = 'lazy';
+
+    // Click opens the lightbox (the drag handler guards against accidental clicks)
+    el.addEventListener('click', (e) => {
+      // Don't open lightbox when clicking delete / ocr overlay buttons
+      if (e.target.closest('.gallery-item-delete, .gallery-item-ocr')) return;
+      openLightbox(item);
+    });
 
     const lbl = document.createElement('div');
     lbl.className = 'gallery-item-label';
@@ -727,7 +890,14 @@
   function saveCropsToSession() {
     try {
       sessionStorage.setItem('cyoa_sidebar_crops', JSON.stringify(
-        state.crops.map((c) => ({ id: c.id, dataUrl: c.dataUrl, width: c.width, height: c.height, label: c.label }))
+        state.crops.map((c) => ({
+          id: c.id,
+          dataUrl: c.dataUrl,
+          thumbDataUrl: c.thumbDataUrl || c.dataUrl,
+          width: c.width,
+          height: c.height,
+          label: c.label,
+        }))
       ));
     } catch (e) {
       // Storage quota exceeded — silently ignore
@@ -1043,6 +1213,65 @@
     ocrText.value = '';
     ocrTitle.textContent = '\u{1F4CB} Extracted Text';
     ocrCopyBtn.disabled = true;
+  }
+
+  /* -----------------------------------------------------------------------
+   * Lightbox — full-size preview with scroll/pan and zoom
+   * --------------------------------------------------------------------- */
+
+  function openLightbox(item) {
+    state.lightboxItemId = item.id;
+    lightboxImg.src = item.dataUrl;
+    lightboxImg.alt = item.label;
+    lightboxTitle.textContent = item.label;
+    // Reset image size until natural dimensions are known
+    lightboxImg.style.width = '';
+    lightboxImg.style.height = '';
+    lightbox.removeAttribute('hidden');
+    if (lightboxImg.complete && lightboxImg.naturalWidth) {
+      fitLightboxToViewport();
+    } else {
+      lightboxImg.onload = fitLightboxToViewport;
+    }
+  }
+
+  function closeLightbox() {
+    lightbox.setAttribute('hidden', '');
+    lightboxImg.src = '';
+    lightboxImg.onload = null;
+    state.lightboxItemId = null;
+    state.lightboxZoom = 1.0;
+  }
+
+  function fitLightboxToViewport() {
+    const vw = lightboxViewport.clientWidth - 16;
+    const vh = lightboxViewport.clientHeight - 16;
+    const nw = lightboxImg.naturalWidth || 1;
+    const nh = lightboxImg.naturalHeight || 1;
+    const zoom = Math.min(vw / nw, vh / nh, 1);
+    applyLightboxZoom(zoom);
+    // Scroll to top-left after fitting
+    lightboxViewport.scrollLeft = 0;
+    lightboxViewport.scrollTop = 0;
+  }
+
+  function changeZoom(delta) {
+    applyLightboxZoom(state.lightboxZoom + delta);
+  }
+
+  function applyLightboxZoom(zoom) {
+    state.lightboxZoom = Math.min(Math.max(zoom, 0.1), 8);
+    const nw = lightboxImg.naturalWidth || 200;
+    const nh = lightboxImg.naturalHeight || 200;
+    lightboxImg.style.width = Math.round(nw * state.lightboxZoom) + 'px';
+    lightboxImg.style.height = Math.round(nh * state.lightboxZoom) + 'px';
+    lightboxZoomLabel.textContent = Math.round(state.lightboxZoom * 100) + '%';
+  }
+
+  function removeCropFromLightbox() {
+    const id = state.lightboxItemId;
+    closeLightbox();
+    if (id) removeCropById(id);
   }
 
   /* -----------------------------------------------------------------------
