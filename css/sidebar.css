@@ -1,0 +1,560 @@
+/* =============================================
+   CYOA Image Sidebar Tool - sidebar.css
+   ============================================= */
+
+/* ---- Sidebar Container ---- */
+#cyoa-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 320px;
+  height: 100vh;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-left: 2px solid #313244;
+  z-index: 99998;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(0);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: 'Roboto', sans-serif;
+  font-size: 13px;
+  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.6);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+#cyoa-sidebar.collapsed {
+  transform: translateX(320px);
+}
+
+/* ---- Toggle Button ---- */
+#sidebar-toggle {
+  position: absolute;
+  left: -38px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 72px;
+  background: #1e1e2e;
+  border: 2px solid #313244;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #89b4fa;
+  font-size: 14px;
+  z-index: 99999;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.4);
+  transition: background 0.2s, color 0.2s;
+  outline: none;
+}
+
+#sidebar-toggle:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+#sidebar-arrow {
+  display: inline-block;
+  transition: transform 0.3s ease;
+  line-height: 1;
+}
+
+#cyoa-sidebar.collapsed #sidebar-arrow {
+  transform: rotate(180deg);
+}
+
+/* ---- Sidebar Content ---- */
+#sidebar-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---- Header ---- */
+#sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px 12px;
+  border-bottom: 1px solid #313244;
+  flex-shrink: 0;
+}
+
+#sidebar-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #89b4fa;
+  line-height: 1.3;
+}
+
+#sidebar-help-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #313244;
+  border: 1px solid #45475a;
+  color: #a6adc8;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  outline: none;
+}
+
+#sidebar-help-btn:hover {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+/* ---- Help Tooltip ---- */
+#sidebar-help-tooltip {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  width: 260px;
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: #bac2de;
+  line-height: 1.6;
+  z-index: 100001;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  display: none;
+}
+
+#sidebar-help-tooltip.visible {
+  display: block;
+}
+
+#sidebar-help-tooltip ol {
+  margin: 4px 0 0 0;
+  padding-left: 16px;
+}
+
+#sidebar-help-tooltip ol li {
+  margin-bottom: 3px;
+}
+
+/* ---- Scale Section ---- */
+#sidebar-scale-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid #313244;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#sidebar-scale-section label {
+  font-size: 12px;
+  color: #a6adc8;
+  white-space: nowrap;
+}
+
+.sidebar-scale-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.scale-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #45475a;
+  background: #313244;
+  color: #a6adc8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  outline: none;
+}
+
+.scale-btn:hover {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+.scale-btn.active {
+  background: #89b4fa;
+  border-color: #89b4fa;
+  color: #1e1e2e;
+}
+
+/* ---- Reference Image Section ---- */
+#sidebar-ref-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid #313244;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#sidebar-ref-label {
+  font-size: 11.5px;
+  color: #a6adc8;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+#sidebar-ref-drop-zone {
+  position: relative;
+  width: 100%;
+  min-height: 120px;
+  max-height: 240px;
+  border: 2px dashed #45475a;
+  border-radius: 8px;
+  background: #181825;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.2s, background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#sidebar-ref-drop-zone.drag-over {
+  border-color: #89b4fa;
+  background: #1a1a30;
+}
+
+#sidebar-ref-drop-zone.has-image {
+  cursor: crosshair;
+  min-height: 0;
+}
+
+#sidebar-ref-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: #585b70;
+  pointer-events: none;
+}
+
+#sidebar-ref-placeholder .placeholder-icon {
+  font-size: 28px;
+  margin-bottom: 2px;
+}
+
+#sidebar-ref-placeholder .placeholder-text {
+  font-size: 12px;
+}
+
+#sidebar-ref-placeholder .placeholder-sub {
+  font-size: 11px;
+  color: #45475a;
+}
+
+/* Canvas wrapper keeps overlay perfectly aligned with the reference canvas */
+#sidebar-canvas-wrapper {
+  display: none;
+  position: relative;
+  width: 100%;
+  line-height: 0;
+}
+
+#sidebar-ref-drop-zone.has-image #sidebar-canvas-wrapper {
+  display: block;
+}
+
+#sidebar-ref-drop-zone.has-image #sidebar-ref-placeholder {
+  display: none;
+}
+
+#sidebar-ref-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+/* Crop overlay stretches to fill wrapper — aligns perfectly with canvas */
+#sidebar-crop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  cursor: crosshair;
+}
+
+#sidebar-ref-drop-zone.has-image #sidebar-crop-overlay {
+  pointer-events: auto;
+}
+
+/* ---- Reference Controls ---- */
+#sidebar-ref-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.sidebar-btn {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #45475a;
+  background: #313244;
+  color: #cdd6f4;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  outline: none;
+  text-align: center;
+}
+
+.sidebar-btn:hover:not(:disabled) {
+  background: #45475a;
+}
+
+.sidebar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sidebar-btn.primary {
+  background: #89b4fa;
+  border-color: #89b4fa;
+  color: #1e1e2e;
+  font-weight: 600;
+}
+
+.sidebar-btn.primary:hover:not(:disabled) {
+  background: #74c7ec;
+  border-color: #74c7ec;
+}
+
+.sidebar-btn.danger {
+  background: #313244;
+  border-color: #f38ba8;
+  color: #f38ba8;
+}
+
+.sidebar-btn.danger:hover:not(:disabled) {
+  background: #f38ba8;
+  color: #1e1e2e;
+}
+
+/* ---- Gallery Section ---- */
+#sidebar-gallery-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  padding: 0;
+}
+
+#sidebar-gallery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 6px 12px;
+  flex-shrink: 0;
+}
+
+#sidebar-gallery-header span {
+  font-size: 11.5px;
+  color: #a6adc8;
+  font-weight: 500;
+}
+
+#sidebar-clear-crops-btn {
+  background: none;
+  border: none;
+  color: #f38ba8;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  outline: none;
+  transition: background 0.15s;
+}
+
+#sidebar-clear-crops-btn:hover {
+  background: rgba(243, 139, 168, 0.15);
+}
+
+#sidebar-gallery {
+  overflow-y: auto;
+  flex: 1;
+  padding: 0 12px 8px 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  align-content: start;
+}
+
+#sidebar-gallery::-webkit-scrollbar {
+  width: 4px;
+}
+
+#sidebar-gallery::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#sidebar-gallery::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 2px;
+}
+
+/* ---- Gallery Item ---- */
+.gallery-item {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid #313244;
+  background: #181825;
+  cursor: grab;
+  transition: border-color 0.15s, transform 0.1s;
+  aspect-ratio: auto;
+}
+
+.gallery-item:hover {
+  border-color: #89b4fa;
+  transform: scale(1.02);
+}
+
+.gallery-item:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+.gallery-item img {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none;
+}
+
+.gallery-item-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(30, 30, 46, 0.85);
+  color: #a6adc8;
+  font-size: 10px;
+  padding: 2px 4px;
+  text-align: center;
+  backdrop-filter: blur(2px);
+}
+
+.gallery-item-delete {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(243, 139, 168, 0.8);
+  border: none;
+  color: #1e1e2e;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  outline: none;
+  line-height: 1;
+  z-index: 2;
+}
+
+.gallery-item:hover .gallery-item-delete {
+  opacity: 1;
+}
+
+/* Drag ghost when dragging from gallery */
+.gallery-item.dragging {
+  opacity: 0.5;
+  border-color: #89b4fa;
+}
+
+/* ---- Drop Highlight ---- */
+.sidebar-drop-target-highlight {
+  outline: 3px solid #89b4fa !important;
+  outline-offset: 2px !important;
+  background: rgba(137, 180, 250, 0.1) !important;
+  transition: outline 0.15s, background 0.15s;
+}
+
+/* ---- Bottom Instructions ---- */
+#sidebar-instructions {
+  padding: 6px 12px 10px 12px;
+  border-top: 1px solid #313244;
+  flex-shrink: 0;
+}
+
+#sidebar-instructions small {
+  font-size: 10.5px;
+  color: #585b70;
+  line-height: 1.5;
+}
+
+/* ---- Upscaling Indicator ---- */
+#sidebar-upscale-indicator {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(30, 30, 46, 0.85);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: #89b4fa;
+  font-size: 12px;
+  border-radius: 8px;
+  z-index: 10;
+}
+
+#sidebar-upscale-indicator.visible {
+  display: flex;
+}
+
+.sidebar-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #313244;
+  border-top-color: #89b4fa;
+  border-radius: 50%;
+  animation: sidebar-spin 0.6s linear infinite;
+}
+
+@keyframes sidebar-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Scrollbar for sidebar content ---- */
+#sidebar-content {
+  scrollbar-width: thin;
+  scrollbar-color: #45475a transparent;
+}
+
+/* ---- Crop selection rectangle drawn on canvas ---- */
+/* (drawn programmatically, no CSS needed) */
+
+/* ---- Responsive: hide sidebar toggle label on very small ---- */
+@media (max-width: 600px) {
+  #cyoa-sidebar {
+    width: 280px;
+  }
+  #cyoa-sidebar.collapsed {
+    transform: translateX(280px);
+  }
+}
